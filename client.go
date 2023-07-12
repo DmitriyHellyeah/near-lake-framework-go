@@ -2,6 +2,7 @@ package nearlake
 
 import (
 	"github.com/DmitriyHellyeah/near-lake-framework-go/types"
+	clientTypes "github.com/DmitriyHellyeah/nearclient/types"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -149,6 +150,33 @@ func (c *Client) TxWatcher(watchingList []string) chan *types.FunctionCall {
 	return functionCallChannel
 }
 
+type ReceiptViewWithBlockHeaderChannel struct {
+	types.ReceiptView
+	BlockHeader clientTypes.BlockHeader
+}
+
+func (c *Client) TxWatcherReceiptWithBlockHeader(watchingList []string) chan *ReceiptViewWithBlockHeaderChannel {
+	receiptViewWithBlockHeaderChannel := make(chan *ReceiptViewWithBlockHeaderChannel)
+	channel := c.Streamer()
+	var wantedReceiptIds []string
+
+	go func() {
+		defer close(channel)
+		defer close(receiptViewWithBlockHeaderChannel)
+
+		for messages := range channel {
+			for _, message := range messages {
+				for _, shard := range message.Shards {
+					if shard.Chunk == nil {continue}
+					retrieveReceiptIdFromTx(shard.Chunk.Transactions, &wantedReceiptIds, watchingList)
+					retrieveActionFromExecutionOutcome(shard.ReceiptExecutionOutcomes, &wantedReceiptIds, receiptViewWithBlockHeaderChannel, message.Block.Header)
+				}
+			}
+		}
+	}()
+	return receiptViewWithBlockHeaderChannel
+}
+
 func retrieveReceiptIdFromTx(txs []types.IndexerTransactionWithOutcome, wantedReceiptIds *[]string, watchingList []string) {
 	for _, tx := range txs {
 		if isTxReceiverWatched(tx, watchingList) {
@@ -158,6 +186,16 @@ func retrieveReceiptIdFromTx(txs []types.IndexerTransactionWithOutcome, wantedRe
 				continue
 			}
 			*wantedReceiptIds = append(*wantedReceiptIds, receiptId)
+		}
+	}
+}
+
+func retrieveActionFromExecutionOutcome(outcome []types.IndexerExecutionOutcomeWithReceipt, wantedReceiptIds *[]string, channel chan *ReceiptViewWithBlockHeaderChannel, blockHeader clientTypes.BlockHeader) {
+	for _, executionOutcome := range outcome {
+		if contains(*wantedReceiptIds, executionOutcome.Receipt.ReceiptId) {
+			channel <- &ReceiptViewWithBlockHeaderChannel{executionOutcome.Receipt, blockHeader}
+			// remove receiptId from wantedReceiptIds list
+			remove(wantedReceiptIds, executionOutcome.Receipt.ReceiptId)
 		}
 	}
 }

@@ -3,8 +3,8 @@ package nearlake
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/DmitriyHellyeah/nearclient/types"
 	lakeTypes "github.com/DmitriyHellyeah/near-lake-framework-go/types"
+	clientTypes "github.com/DmitriyHellyeah/nearclient/types"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"log"
@@ -46,7 +46,7 @@ func (c *Client) ListBlocks(bucketName string, startFromBlockHeight uint64) (blo
 
 func (c *Client) FetchStreamerMessage(bucketName string, blockHeight uint64) (*lakeTypes.StreamerMessage, error) {
 	blockId := fmt.Sprintf("%012d/block.json", blockHeight)
-	var block types.BlockDetails
+	var block clientTypes.BlockDetails
 	var streamer lakeTypes.StreamerMessage
 
 	response, err := c.S3Client.GetObject(&s3.GetObjectInput{
