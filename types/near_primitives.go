@@ -2,7 +2,7 @@ package types
 
 import (
 	"fmt"
-	"github.com/DmitriyHellyeah/nearclient/types"
+	clientTypes "github.com/DmitriyHellyeah/nearclient/types"
 )
 
 type BlockHeight int
@@ -108,7 +108,7 @@ type IndexerTransactionWithOutcome struct {
 
 type IndexerChunk struct {
 	Author       string                          `json:"author"`
-	Header       types.ChunkHeader               `json:"header"`
+	Header       clientTypes.ChunkHeader         `json:"header"`
 	Transactions []IndexerTransactionWithOutcome `json:"transactions"`
 	Receipts     []ReceiptView                   `json:"receipts"`
 }
@@ -126,6 +126,11 @@ type StateChange struct {
 }
 
 type StreamerMessage struct {
-	Block  types.BlockDetails `json:"block"`
+	Block  clientTypes.BlockDetails `json:"block"`
 	Shards []*IndexerShard    `json:"shards"`
+}
+
+type StreamerReceipt struct {
+	Block  clientTypes.BlockDetails `json:"block"`
+	Receipts []ReceiptView    `json:"shards"`
 }

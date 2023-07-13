@@ -2,7 +2,6 @@ package nearlake
 
 import (
 	"github.com/DmitriyHellyeah/near-lake-framework-go/types"
-	clientTypes "github.com/DmitriyHellyeah/nearclient/types"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -150,33 +149,6 @@ func (c *Client) TxWatcher(watchingList []string) chan *types.FunctionCall {
 	return functionCallChannel
 }
 
-type ReceiptViewWithBlockHeaderChannel struct {
-	types.ReceiptView
-	BlockHeader clientTypes.BlockHeader
-}
-
-func (c *Client) TxWatcherReceiptWithBlockHeader(watchingList []string) chan *ReceiptViewWithBlockHeaderChannel {
-	receiptViewWithBlockHeaderChannel := make(chan *ReceiptViewWithBlockHeaderChannel)
-	channel := c.Streamer()
-	var wantedReceiptIds []string
-
-	go func() {
-		defer close(channel)
-		defer close(receiptViewWithBlockHeaderChannel)
-
-		for messages := range channel {
-			for _, message := range messages {
-				for _, shard := range message.Shards {
-					if shard.Chunk == nil {continue}
-					retrieveReceiptIdFromTx(shard.Chunk.Transactions, &wantedReceiptIds, watchingList)
-					retrieveActionFromExecutionOutcome(shard.ReceiptExecutionOutcomes, &wantedReceiptIds, receiptViewWithBlockHeaderChannel, message.Block.Header)
-				}
-			}
-		}
-	}()
-	return receiptViewWithBlockHeaderChannel
-}
-
 func retrieveReceiptIdFromTx(txs []types.IndexerTransactionWithOutcome, wantedReceiptIds *[]string, watchingList []string) {
 	for _, tx := range txs {
 		if isTxReceiverWatched(tx, watchingList) {
@@ -186,16 +158,6 @@ func retrieveReceiptIdFromTx(txs []types.IndexerTransactionWithOutcome, wantedRe
 				continue
 			}
 			*wantedReceiptIds = append(*wantedReceiptIds, receiptId)
-		}
-	}
-}
-
-func retrieveActionFromExecutionOutcome(outcome []types.IndexerExecutionOutcomeWithReceipt, wantedReceiptIds *[]string, channel chan *ReceiptViewWithBlockHeaderChannel, blockHeader clientTypes.BlockHeader) {
-	for _, executionOutcome := range outcome {
-		if contains(*wantedReceiptIds, executionOutcome.Receipt.ReceiptId) {
-			channel <- &ReceiptViewWithBlockHeaderChannel{executionOutcome.Receipt, blockHeader}
-			// remove receiptId from wantedReceiptIds list
-			remove(wantedReceiptIds, executionOutcome.Receipt.ReceiptId)
 		}
 	}
 }
@@ -222,4 +184,55 @@ func retrieveFunctionCallActionFromExecutionOutcome(outcome []types.IndexerExecu
 			remove(wantedReceiptIds, executionOutcome.Receipt.ReceiptId)
 		}
 	}
+}
+
+func(c *Client) ReceiptWatcher(watchingList []string) chan *types.StreamerReceipt {
+	channel := c.Streamer()
+	streamerReceipt := make(chan *types.StreamerReceipt)
+	var wantedReceiptIds []string
+	var receipts []types.ReceiptView
+
+	go func() {
+		defer close(channel)
+
+		for messages := range channel {
+			for _, message := range messages {
+				for _, shard := range message.Shards {
+					if shard.Chunk == nil {continue}
+					retrieveReceiptIdFromExecutionOutcome(shard.ReceiptExecutionOutcomes, &wantedReceiptIds, watchingList)
+					if len(wantedReceiptIds) == 0 {continue}
+					retrievedReceipts := retrieveReceiptsFromExecutionOutcome(shard.ReceiptExecutionOutcomes, &wantedReceiptIds)
+					receipts = append(receipts, retrievedReceipts...)
+				}
+				streamerReceipt <- &types.StreamerReceipt{
+					Block:  message.Block,
+					Receipts: receipts,
+				}
+				receipts = make([]types.ReceiptView, 0)
+			}
+		}
+	}()
+	return streamerReceipt
+}
+
+func retrieveReceiptIdFromExecutionOutcome(outcome []types.IndexerExecutionOutcomeWithReceipt, wantedReceiptIds *[]string, watchingList []string) {
+	for _, executionOutcome := range outcome {
+		if !executionOutcome.ExecutionOutcome.Outcome.Status.IsSuccess() {
+			continue
+		}
+		if !contains(watchingList, executionOutcome.Receipt.ReceiverId) {
+			continue
+		}
+		*wantedReceiptIds = append(*wantedReceiptIds, executionOutcome.Receipt.ReceiptId)
+	}
+}
+
+func retrieveReceiptsFromExecutionOutcome(outcome []types.IndexerExecutionOutcomeWithReceipt, wantedReceiptIds *[]string) (receipts []types.ReceiptView){
+	for _, executionOutcome := range outcome {
+		if contains(*wantedReceiptIds, executionOutcome.Receipt.ReceiptId) {
+			receipts = append(receipts, executionOutcome.Receipt)
+			remove(wantedReceiptIds, executionOutcome.Receipt.ReceiptId)
+		}
+	}
+	return
 }
