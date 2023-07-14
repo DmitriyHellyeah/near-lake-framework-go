@@ -24,6 +24,7 @@ func (a *ActionView) UnmarshalJSON(data []byte) error {
 	}
 	return nil
 }
+const CreateAccount = "CreateAccount"
 
 type DeployContract struct {
 	Code string `json:"code"`
@@ -135,6 +136,7 @@ func (a *ActionView) GetDeployContract() (dc *DeployContract, err error)  {
 		}
 		return
 	}
+	err = fmt.Errorf("action is not a DeployContract. %s", a)
 	return
 }
 
@@ -159,7 +161,7 @@ func (a *ActionView) GetFunctionCall() (fc *FunctionCall, err error) {
 		}
 		return
 	}
-	err = fmt.Errorf("action is not a functionCall. %s", a)
+	err = fmt.Errorf("action is not a FunctionCall. %s", a)
 	return
 }
 
@@ -168,6 +170,23 @@ func (a *ActionView) IsTransfer() (ok bool) {
 		_, ok = (*a.ActionObject)["Transfer"]
 		return
 	}
+	return
+}
+
+func (a *ActionView) GetTransfer() (tr *Transfer, err error) {
+	if a.IsFunctionCall() {
+		var data []byte
+		data, err = json.Marshal((*a.ActionObject)["Transfer"])
+		if err != nil {
+			return
+		}
+		err = json.Unmarshal(data, &tr)
+		if err != nil {
+			return
+		}
+		return
+	}
+	err = fmt.Errorf("action is not a Transfer. %s", a)
 	return
 }
 
@@ -200,13 +219,14 @@ func (a *ActionView) GetAddKey() (ak *AddKey, err error) {
 		}
 		return
 	}
+	err = fmt.Errorf("action is not an AddKey. %s", a)
 	return
 }
 
 
 func (a *ActionView) IsCreateAccount() (ok bool)  {
 	if a.ActionString != nil {
-		return *a.ActionString == "CreateAccount"
+		return *a.ActionString == CreateAccount
 	}
 	return
 }
