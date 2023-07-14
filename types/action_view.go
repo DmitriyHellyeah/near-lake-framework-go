@@ -3,7 +3,7 @@ package types
 import (
 	"encoding/base64"
 	"encoding/json"
-	"math/big"
+	"fmt"
 )
 
 type ActionView struct {
@@ -30,11 +30,11 @@ type DeployContract struct {
 }
 
 type Transfer struct {
-	Deposit *big.Int `json:"deposit"`
+	Deposit *BigInt `json:"deposit"`
 }
 
 type Stake struct {
-	Stake     *big.Int `json:"stake"`
+	Stake     *BigInt `json:"stake"`
 	PublicKey string   `json:"public_key"`
 }
 
@@ -104,6 +104,16 @@ func (fc *FunctionCall) DecodeArgs(to interface{}) (err error) {
 	return
 }
 
+func (a *ActionView) String() (str string) {
+	if jActObj, _ := json.Marshal(a.ActionObject); a.ActionObject != nil {
+		str = string(jActObj)
+	}
+	if a.ActionString != nil {
+		str = *a.ActionString
+	}
+	return
+}
+
 func (a *ActionView) IsDeployContract() (ok bool) {
 	if (a.ActionObject) != nil {
 		_, ok = (*a.ActionObject)["DeployContract"]
@@ -149,6 +159,7 @@ func (a *ActionView) GetFunctionCall() (fc *FunctionCall, err error) {
 		}
 		return
 	}
+	err = fmt.Errorf("action is not a functionCall. %s", a)
 	return
 }
 
