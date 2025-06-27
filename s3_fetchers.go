@@ -45,38 +45,20 @@ func (c *Client) ListBlocks(bucketName string, startFromBlockHeight uint64) (blo
 }
 
 func (c *Client) FetchStreamerMessage(bucketName string, blockHeight uint64) (*lakeTypes.StreamerMessage, error) {
-	blockId := fmt.Sprintf("%012d/block.json", blockHeight)
-	var block clientTypes.BlockDetails
 	var streamer lakeTypes.StreamerMessage
-
-	response, err := c.S3Client.GetObject(&s3.GetObjectInput{
-		Bucket:       aws.String(bucketName),
-		Key:          aws.String(blockId),
-		RequestPayer: aws.String(c.Config.RequestPayer),
-	})
-
+	block, err := FetchBlockWithRetry(bucketName, blockHeight)
 	if err != nil {
-		log.Printf("Can't get object from s3. Method [GetObject] %s", err)
-		return nil, err
+		log.Printf("Can't get object from s3. Method [FetchBlockWithRetry] %s", err)
+		return nil, err 
 	}
-
-	defer func() {
-		err = response.Body.Close()
-	}()
-
-	decoder := json.NewDecoder(response.Body)
-
-	if err = decoder.Decode(&block); err != nil {
-		return nil, err
-	}
-	err = response.Body.Close()
 
 	streamer.Block = block
 
 	for _, shard := range block.Chunks {
 		res, err := c.FetchShardOrRetry(bucketName, blockHeight, shard.ShardId)
 		if err != nil {
-			log.Printf("Can't get object from s3. Method [FetchShardOrRetry] %s", err)
+			log.Printf("Can't get object from s3. Method [FetchShardWithRetry] %s", err)
+			return nil, err
 		}
 
 		streamer.Shards = append(streamer.Shards, res)
@@ -85,14 +67,42 @@ func (c *Client) FetchStreamerMessage(bucketName string, blockHeight uint64) (*l
 	return &streamer, nil
 }
 
-func (c *Client) FetchShardOrRetry(bucketName string, blockHeight uint64, shardId int) (*lakeTypes.IndexerShard, error) {
+func (c *Client) FetchBlockWithRetry(bucketName string, blockHeight uint64) (*clientTypes.BlockDetails, error) {
+	blockId := fmt.Sprintf("%012d/block.json", blockHeight)
+	var block clientTypes.BlockDetails
+	for {
+		response, err := c.S3Client.GetObject(&s3.GetObjectInput{
+			Bucket:       aws.String(bucketName),
+			Key:          aws.String(blockId),
+			RequestPayer: aws.String(c.Config.RequestPayer),
+		})
+
+		if err != nil {
+			log.Printf("Can't get object from s3. Block [%d]. %s. Will sleep %d seconds an retry", blockHeight, err, c.Config.BlockWaitingTimeout)
+			time.Sleep(time.Second * c.Config.BlockWaitingTimeout)
+			continue
+		}
+
+		decoder := json.NewDecoder(response.Body)
+
+		if err = decoder.Decode(&block); err != nil {
+			return nil, err
+		}
+
+		err = response.Body.Close()
+		return &block, nil
+	}
+
+}
+
+func (c *Client) FetchShardWithRetry(bucketName string, blockHeight uint64, shardId int) (*lakeTypes.IndexerShard, error) {
 	shard := fmt.Sprintf("%012d/shard_%d.json", blockHeight, shardId)
 	var indexerShard lakeTypes.IndexerShard
 	for {
 		response, err := c.S3Client.GetObject(&s3.GetObjectInput{
 			Bucket:       aws.String(bucketName),
 			Key:          aws.String(shard),
-			RequestPayer: aws.String("requester"),
+			RequestPayer: aws.String(c.Config.RequestPayer),
 		})
 
 		// add delay coz shards can appears later then the blocks list

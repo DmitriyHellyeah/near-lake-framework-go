@@ -20,7 +20,8 @@ type S3Config struct {
 	RequestPayer            string
 	BlocksCountWaiting      int           // To prevent requests spamming if data does not exist yet
 	RequestWaitingTimeout   time.Duration // To prevent requests spamming if data does not exist yet
-	ShardsWaitingTimeout    time.Duration // sometimes shards can appears later then the blocks list
+	ShardsWaitingTimeout    time.Duration // sometimes shards can appears later then the blocks list (nearlake bugs)
+	BlockWaitingTimeout 	time.Duration // sometimes block can appears later then the blocks list (nearlake bugs)
 }
 
 func InitDefaultMainnetConfig(startAfter, numberOfBlockRequested uint64) S3Config {
@@ -48,5 +49,6 @@ func InitDefaultConfig() S3Config {
 		BlocksCountWaiting: 10,
 		RequestWaitingTimeout: 10,
 		ShardsWaitingTimeout: 2,
+		BlockWaitingTimeout: 5,
 	}
 }
